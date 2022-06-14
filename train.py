@@ -2,7 +2,7 @@
 Train efficient-net classifier
 
 author: phatnt
-date: May-19-2022
+date: June-14-2022
 '''
 import os
 import os
@@ -16,14 +16,14 @@ import torch
 from tqdm.autonotebook import tqdm
 import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
-from custom_dataset import CustomDataset, Normalize, ToTensor, Resize
+from dataset import CustomDataset, Normalize, ToTensor, Resize
 
 sys.path.append('./efficientnet')
 from model import EfficientNet
 
 def parser_args():
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--data', type=str, help='path to train/test/val.txt contain folder')
+	parser.add_argument('--data', type=str, help='path to train.txt contain folder')
 	parser.add_argument('--imgsz', type=int, default=None, help='Train image size')
 	parser.add_argument('--channels',type=int, default=3)
 	parser.add_argument('--arch', type=int, default=3, help='EfficientNet architechture(0->8)')
@@ -33,8 +33,6 @@ def parser_args():
 	parser.add_argument('--work-dir', type=str, default=None)
 
 	parser.add_argument('--lr', type=float, default=0.001)
-	parser.add_argument('--momentum', type=float, default=0.9) 
-	parser.add_argument('--weight-decay', default=1e-4, type=float)
 	parser.add_argument('--device', type=int, default=0)
 	parser.add_argument('--workers', type=int, default=4)
 	return parser.parse_args()
@@ -78,7 +76,6 @@ def train(args):
 	assert args.arch >= 0 and args.arch <= 8, '[ERROR] Invalid EfficientNet Architecture (0 -> 8)'
 	assert os.path.isdir(args.data), f'[ERROR] Could not found {args.data}. Or not a directory!'
 	
-
 	# Load model
 	if torch.cuda.is_available():
 		device = torch.device("cuda")
@@ -112,7 +109,7 @@ def train(args):
 		model.load_state_dict(checkpoint['state_dict'])
 		print(f"[INFO] Loaded checkpoint {args.resume}. At epoch {last_epoch}.")
 
-	# Load data 
+	# Load dataset
 	train_file = os.path.join(args.data, "train.txt")
 	assert os.path.isfile(train_file), f'[ERROR] Could not found train.txt in {args.data}'
 	
@@ -120,7 +117,6 @@ def train(args):
 	train_loader = torch.utils.data.DataLoader(CustomDataset(train_file, train_transforms),
 												batch_size=args.batch, shuffle=True,
 												num_workers=args.workers, pin_memory=False, sampler=None)
-
 
 	print('[INFO] Model info:')
 	print(f'\t + Using {model_name}.')
@@ -132,7 +128,7 @@ def train(args):
 
 	# Loss & Optimizer
 	criterion = torch.nn.MSELoss().to(device=device, dtype=torch.float)
-	optimizer = torch.optim.SGD(model.parameters(), args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+	optimizer = torch.optim.Adam(model.parameters(), args.lr)
 	if args.resume:
 		optimizer.load_state_dict(checkpoint['optimizer'])
 	scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
@@ -147,7 +143,7 @@ def train(args):
 	print(f'[INFO] Log Dirs: {log_dir} Created!')
 	print(f'[INFO] Weights Dirs: {weight_save_dir} Created')
 	
-	# Train
+	# Train model
 	init_lr = args.lr
 	max_epoch = args.epoch
 	best_loss = 1e5
@@ -167,8 +163,8 @@ def train(args):
 				images = images.to(device=device, dtype=torch.float)
 				targets = targets.to(device=device, dtype=torch.float)
 				optimizer.zero_grad()
-				output = model(images)
-				loss = criterion(output, targets.long())
+				output = torch.squeeze(model(images))
+				loss = criterion(output, targets)
 				if loss == 0 or not torch.isfinite(loss):
 					continue
 				loss.backward()
@@ -192,12 +188,10 @@ def train(args):
 				'arch': model_arch,
 				'image_size': imgsz,
 				'in_channels': in_channels,
+				'num_classes': num_classes,
 				'state_dict': model.state_dict(),
-				'optimizer' : optimizer.state_dict(),
-				'num_classes': num_classes},
-				saved_path=weight_save_dir, is_best_loss=is_best_loss, is_best_acc=is_best_acc)
-			is_best_loss = False
-			is_best_acc = False
+				'optimizer' : optimizer.state_dict()},
+				saved_path=weight_save_dir, is_best_loss=is_best_loss)
 			last_epoch = epoch
 	except KeyboardInterrupt:
 		writer.close()
@@ -207,10 +201,10 @@ def train(args):
 			'arch': model_arch,
 			'image_size': imgsz,
 			'in_channels': in_channels,
+			'num_classes': num_classes,
 			'state_dict': model.state_dict(),
-			'optimizer' : optimizer.state_dict(),
-			'num_classes': num_classes},
-			saved_path=weight_save_dir, is_best_loss=False, is_best_acc=False)
+			'optimizer' : optimizer.state_dict()},
+			saved_path=weight_save_dir, is_best_loss=False)
 	
 if __name__ == '__main__':
 	args = parser_args()

@@ -10,6 +10,8 @@ import cv2
 import torch
 import numpy as np
 
+IMG_EXTS = ['jpg', 'png', 'bmp', 'jpeg']
+
 class CustomDataset(torch.utils.data.Dataset):
 	"""
 	Customize your own Dataset to Pytorch-type dataset.
@@ -40,9 +42,16 @@ class CustomDataset(torch.utils.data.Dataset):
 		if torch.is_tensor(idx):
 			idx = idx.tolist()
 		assert os.path.isfile(self.image_paths[idx]), f'[ERROR] Could not found {self.image_paths[idx]}!'
-		image = cv2.imread(self.image_paths[idx])
-		assert image is not None, '[ERROR] image is None'
-		target = int(self.targets[idx])
+		exts = self.image_paths[idx].split('.')[-1]
+		if exts in IMG_EXTS:
+			image = cv2.imread(self.image_paths[idx])
+			assert image is not None, '[ERROR] image is None'
+		elif exts == 'npy':
+			image = np.load(self.image_paths[idx])
+			image = np.squeeze(image)
+		else:
+			raise Exception(f'[ERROR] Unsupported extension: {exts}')
+		target = float(self.targets[idx])
 		path = self.image_paths[idx]
 		sample = {'image': image, 'path': path, 'target': target}
 		if self.transform:
