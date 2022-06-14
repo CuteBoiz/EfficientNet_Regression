@@ -165,8 +165,6 @@ def train(args):
 				optimizer.zero_grad()
 				output = torch.squeeze(model(images))
 				loss = criterion(output, targets)
-				if loss == 0 or not torch.isfinite(loss):
-					continue
 				loss.backward()
 				optimizer.step()
 				epoch_loss.append(float(loss))
